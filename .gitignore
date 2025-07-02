@@ -36,3 +36,4 @@ build/
 *.egg-info/
 # Node modules
 node_modules/
+chat-ui/node_modules/
