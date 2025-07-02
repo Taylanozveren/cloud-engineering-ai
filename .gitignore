@@ -34,3 +34,5 @@ docs/~$*
 dist/
 build/
 *.egg-info/
+# Node modules
+node_modules/
