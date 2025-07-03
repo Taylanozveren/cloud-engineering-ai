@@ -1,0 +1,2 @@
+curl -X POST "https://cloud-rag-project-resource.openai.azure.com/openai/deployments/gpt-4o-mini/chat/completions?api-version=2025-01-01-preview" -H "Content-Type: application/json" -H "api-key: 98XfyTU2K3tIYgbO0RD4vWrIiwdMHvGUnZPu4MA7i4Md4Wrvo4cmJQQJ99BGACYeBjFXJ3w3AAAAACOGV1xi" -d "@body-rag-v2.json"
+pause 

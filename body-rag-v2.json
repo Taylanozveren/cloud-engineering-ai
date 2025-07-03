@@ -1,0 +1,32 @@
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": "taylan kimdir"
+    }
+  ],
+  "data_sources": [
+    {
+      "type": "azure_search",
+      "parameters": {
+        "endpoint": "https://to-minirag-search.search.windows.net/",
+        "index_name": "idx-minirag",
+        "semantic_configuration": "default",
+        "fields_mapping": {
+          "content_fields_separator": "\n",
+          "content_fields": ["content"],
+          "filepath_field": "filepath",
+          "title_field": "title",
+          "url_field": "url",
+          "vector_fields": []
+        },
+        "in_scope": true,
+        "top_n_documents": 5,
+        "authentication": {
+          "type": "api_key",
+          "key": "YOUR-SEARCH-KEY-HERE"
+        }
+      }
+    }
+  ]
+} 

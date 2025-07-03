@@ -1,0 +1,17 @@
+{
+  "messages": [
+    { "role": "user", "content": "who is taylan" }
+  ],
+  "dataSources": [
+    {
+      "type": "AzureCognitiveSearch",
+      "parameters": {
+        "endpoint": "https://to-minirag-search.search.windows.net/",
+        "key": "YOUR-SEARCH-KEY-HERE",
+        "indexName": "idx-minirag",
+        "inScope": true,
+        "topNDocuments": 5
+      }
+    }
+  ]
+} 
