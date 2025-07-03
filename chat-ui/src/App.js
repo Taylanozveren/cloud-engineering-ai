@@ -5,27 +5,44 @@ import { motion } from "framer-motion";
 import { Send, User, Bot } from "lucide-react";
 import clsx from "clsx";
 
-const {
-  REACT_APP_OPENAI_KEY,
-  REACT_APP_SEARCH_KEY,
-  REACT_APP_CHAT_ENDPOINT,
-  REACT_APP_SEARCH_ENDPOINT,
-  REACT_APP_DEPLOYMENT = "gpt-4o-mini",
-  REACT_APP_API_VERSION = "2025-01-01-preview"
-} = process.env;
+// ENV değişkenlerini oku ve kontrol et
+const env = {
+  REACT_APP_FOUNDRY_ENDPOINT: process.env.REACT_APP_FOUNDRY_ENDPOINT,
+  REACT_APP_FOUNDRY_KEY: process.env.REACT_APP_FOUNDRY_KEY,
+  REACT_APP_OPENAI_DEPLOYMENT: process.env.REACT_APP_OPENAI_DEPLOYMENT,
+  REACT_APP_OPENAI_API_VERSION: process.env.REACT_APP_OPENAI_API_VERSION,
+  REACT_APP_AZURE_SEARCH_ENDPOINT: process.env.REACT_APP_AZURE_SEARCH_ENDPOINT,
+  REACT_APP_AZURE_SEARCH_KEY: process.env.REACT_APP_AZURE_SEARCH_KEY,
+  REACT_APP_AZURE_SEARCH_INDEX: process.env.REACT_APP_AZURE_SEARCH_INDEX
+};
+
+// Eksik env var mı kontrol et
+const missingEnv = Object.entries(env)
+  .filter(([k, v]) => !v)
+  .map(([k]) => k);
+
+console.table({
+  ...env,
+  REACT_APP_FOUNDRY_KEY: env.REACT_APP_FOUNDRY_KEY?.slice(0, 5) + "...",
+  REACT_APP_AZURE_SEARCH_KEY: env.REACT_APP_AZURE_SEARCH_KEY?.slice(0, 5) + "..."
+});
 
 const MODES = {
   FREE: "Free Chat",
   RAG: "Chat with Your Data (RAG)"
 };
 
+// Endpoint doğrulama ve URL builder
 const buildUrl = (mode) => {
-  let endpoint = REACT_APP_CHAT_ENDPOINT;
-  if (endpoint && !endpoint.endsWith("/")) endpoint += "/";
-  if (mode === MODES.RAG) {
-    return `${endpoint}openai/deployments/${REACT_APP_DEPLOYMENT}/extensions/chat/completions?api-version=${REACT_APP_API_VERSION}`;
-  }
-  return `${endpoint}openai/deployments/${REACT_APP_DEPLOYMENT}/chat/completions?api-version=${REACT_APP_API_VERSION}`;
+  let ep = env.REACT_APP_FOUNDRY_ENDPOINT;
+  if (!ep) throw new Error("REACT_APP_FOUNDRY_ENDPOINT is undefined");
+  if (!ep.endsWith("/")) ep += "/";
+  if (!ep.includes("openai")) throw new Error("Endpoint 'openai' içermiyor, muhtemelen yanlış endpoint!");
+  const base = `${ep}openai/deployments/${env.REACT_APP_OPENAI_DEPLOYMENT}`;
+  const q = `?api-version=${env.REACT_APP_OPENAI_API_VERSION}`;
+  return mode === MODES.RAG
+    ? `${base}/extensions/chat/completions${q}`
+    : `${base}/chat/completions${q}`;
 };
 
 export default function App() {
@@ -36,9 +53,7 @@ export default function App() {
   const [error, setError] = useState("");
   const bottomRef = useRef(null);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  useEffect(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), [messages]);
 
   const ask = async () => {
     setError("");
@@ -48,55 +63,72 @@ export default function App() {
     setMessages((m) => [...m, { role: "user", text: prompt }]);
     setLoading(true);
 
-    const url = buildUrl(mode);
-    let requestBody = {
+    let url = "";
+    try {
+      url = buildUrl(mode);
+    } catch (e) {
+      setError(e.message);
+      setLoading(false);
+      return;
+    }
+
+    const body = {
       messages: [
         { role: "system", content: "You are a helpful assistant that cites sources." },
         { role: "user", content: prompt }
       ],
       temperature: 0.2
     };
+
     if (mode === MODES.RAG) {
-      requestBody.dataSources = [
+      body.data_sources = [
         {
-          type: "AzureCognitiveSearch",
+          type: "azure_search",
           parameters: {
-            endpoint: REACT_APP_SEARCH_ENDPOINT,
-            key: REACT_APP_SEARCH_KEY,
-            indexName: "idx-minirag",
-            topNDocuments: 5
+            endpoint: env.REACT_APP_AZURE_SEARCH_ENDPOINT,
+            index_name: env.REACT_APP_AZURE_SEARCH_INDEX,
+            semantic_configuration: "default",
+            fields_mapping: {
+              content_fields_separator: "\n",
+              content_fields: ["content"],
+              filepath_field: "filepath",
+              title_field: "title",
+              url_field: "url",
+              vector_fields: []
+            },
+            in_scope: true,
+            top_n_documents: 5,
+            authentication: {
+              type: "api_key",
+              key: env.REACT_APP_AZURE_SEARCH_KEY
+            }
           }
         }
       ];
     }
+
+    console.log("[ASK] URL", url);
+    console.log("[ASK] Body", body);
     try {
-      const { data } = await axios.post(
-        url,
-        requestBody,
-        {
-          headers: {
-            "Content-Type": "application/json",
-            "api-key": REACT_APP_OPENAI_KEY
-          }
+      const { data } = await axios.post(url, body, {
+        headers: {
+          "Content-Type": "application/json",
+          "api-key": env.REACT_APP_FOUNDRY_KEY
         }
-      );
-      const content = data.choices[0].message.content;
-      setMessages((m) => [...m, { role: "bot", text: content }]);
+      });
+      setMessages((m) => [...m, { role: "bot", text: data.choices[0].message.content }]);
     } catch (err) {
-      setError(`Error: ${err.message}\n${err.response?.data?.error?.message || ""}`);
-      setMessages((m) => [
-        ...m,
-        { role: "bot", text: `❌ ${err.response?.data?.error?.message || err.message}` }
-      ]);
+      const msg = err.response?.data?.error?.message || err.message;
+      setError(msg);
+      setMessages((m) => [...m, { role: "bot", text: `❌ ${msg}` }]);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleKey = (e) => {
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) ask();
-  };
+  const onKey = (e) => (e.key === "Enter" && (e.ctrlKey || e.metaKey)) && ask();
 
+  // UI ── mesaj listesi ve giriş bölümü
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-300">
       <motion.div
@@ -152,11 +184,19 @@ export default function App() {
           <div ref={bottomRef} />
         </div>
 
-        {error && (
+        {/* Hata ve env uyarısı */}
+        {(error || missingEnv.length > 0) && (
           <div className="px-6 pb-2">
-            <div className="bg-red-100 border border-red-300 text-red-700 rounded-lg px-4 py-2 text-sm font-medium shadow">
-              {error}
-            </div>
+            {missingEnv.length > 0 && (
+              <div className="bg-yellow-100 border border-yellow-300 text-yellow-700 rounded-lg px-4 py-2 text-sm font-medium shadow mb-2">
+                Eksik environment değişkenleri: {missingEnv.join(", ")}
+              </div>
+            )}
+            {error && (
+              <div className="bg-red-100 border border-red-300 text-red-700 rounded-lg px-4 py-2 text-sm font-medium shadow">
+                {error}
+              </div>
+            )}
           </div>
         )}
 
@@ -165,7 +205,7 @@ export default function App() {
             <textarea
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
-              onKeyDown={handleKey}
+              onKeyDown={onKey}
               placeholder="Type your question…  (Ctrl/⌘+Enter)"
               rows={2}
               className="flex-1 resize-none rounded-xl border px-3 py-2 focus:ring-2 focus:ring-blue-500"
